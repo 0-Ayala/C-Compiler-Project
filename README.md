@@ -1,5 +1,6 @@
 # Instructions
-
+#I am trying to use VI, look! This is the change I have made in order to show that I have made a 
+#change that I will then commit and push back up stream! Yay!!!!!
 This repository is for CSC348 Winter 2017.
 
 You should check out your personal repository from BitBucket.  Make your changes to the files in
