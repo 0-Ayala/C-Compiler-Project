@@ -18,26 +18,26 @@ object Intcomp1 {
   case class Let (nm : String, e1 : Expr, e2 : Expr)  extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr) extends Expr
   //HW STUFF
-  val fvex1 = 
-  Let("x",
-  		Prim("+", var("y"),CstI(1)),
-  			Prim("+", var("x"), CstI(1)));
-  val fvex2 = 
-  Let("x",
-  		Prim("+" var("x"), CstI(1)),
-  			Prim("+", var("x"), CstI(1)));
-  val fvex3 = 
-  Let("x",
-  		(Let"x",
-  				Prim("+", var("y"), CstI(1)),
-  					Prim("+", var("x"), CstI(1)),
-  						Prim("+", var("x"), CstI(1))));
-  val fvex4 = 
-  Let("x"
-  		Let"y",
-  			(CstI(1))
-  				Prim("+" var("y"), CstI(1)),
-  					Prim("+" var("x"), var("y")));
+  val fvex1 : Expr = 
+    Let("x",
+    		Prim("+", var("y"),CstI(1)),
+    			Prim("+", var("x"), CstI(1)));
+  val fvex2 : Expr =
+    Let("x",
+    		Prim("+" var("x"), CstI(1)),
+    			Prim("+", var("x"), CstI(1)));
+  val fvex3 : Expr = 
+    Let("x",
+    		(Let"x",
+    				Prim("+", var("y"), CstI(1)),
+    					Prim("+", var("x"), CstI(1)),
+    						Prim("+", var("x"), CstI(1))));
+  val fvex4 : Expr = 
+    Let("x"
+    		Let"y",
+    			(CstI(1))
+    				Prim("+" var("y"), CstI(1)),
+    					Prim("+" var("x"), var("y")));
 
   // Some closed expressions:
 
