@@ -1,0 +1,22 @@
+C# Compiler Installation:
+
+Since I am on a Mac I had to run the following command in the terminal:
+	brew install mono
+
+I created a hello.exe in vi:
+
+using System;
+public class HelloWorld
+{
+    static public void Main ()
+    {
+        Console.WriteLine ("Hello Mono World");
+    }
+}
+
+Then I saved the file as hello.cs and quitted out of vi.
+
+The next command I ran in the terminal:
+	mcs hello.cs
+This created the executable mono.exe. I ran the executable by typing:
+	mono hello.exe
