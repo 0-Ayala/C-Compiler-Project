@@ -9,10 +9,10 @@ object Project {
     val digits : Parser[Int] = P (CharIn ('0' to '9').rep (1).!).map (s => s.toInt)
     val integer : Parser[Expr] = digits.map (n => CstI (n))
 
-    val keywords : List[String] = List ("let", "in", "end")
+    val keywords : List[String] = List ("let", "in", "end", "string")
     val alpha : Parser[String] = P ((CharIn ('A' to 'Z') | CharIn ('a' to 'z')).!)
     val ident : Parser[String] = P ((alpha ~ (alpha | CharIn ('0' to '9')).rep (0)).!).filter (s => !keywords.contains (s))
-    val variable : Parser[Expr] = ident.map (s => Var (s))
+    val stringAssignment : P[Unit] = P ("string" ~ ident.map (s=>() ) )
   }
 
   object MyParsers {
@@ -26,9 +26,12 @@ object Project {
 
     import MyParsersNoWhitespace._
 
-    val putYourStuffHere : Parser[Unit] = P ("do some stuff here")
+    val parens : Parser[Expr] = P (integer | ("(" ~ addSub ~ ")"))
+    val mult : Parser[Expr] = P (parens ~ ("*".! ~ parens).rep.map (s => s.toList)).map (foldAssocLeft)
+    val addSub : Parser[Expr] = P (mult ~ (("+" | "-").! ~ mult).rep.map (s => s.toList)).map (foldAssocLeft)
+    val stringAssignment : P[Unit] = P ("string" ~ ident.map (s=>() ) )
 
-    val start : Parser[Unit] = P (putYourStuffHere ~ End)
+    //val start : Parser[Unit] = P (putYourStuffHere ~ End)
   }
 
   sealed trait Expr
@@ -61,8 +64,8 @@ object Project {
   def main (args : Array[String]) {
     println ("=" * 80)
 
-    val p01 : Parser[Unit] = MyParsers.start
-    test (p01, "do some stuff here")
+    val p01 : Parser[Unit] = MyParsers.stringAssignment
+    test (p01, "string s")
     println ("=" * 80)
   }
 }

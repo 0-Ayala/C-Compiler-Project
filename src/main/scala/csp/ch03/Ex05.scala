@@ -26,7 +26,7 @@ object Ex05 {
     import MyParsersNoWhitespace._
 
     val atom : Parser[Expr] = P (integer | variable)
-    val parens : Parser[Expr] = P (atom | ("(" ~ addSub ~ ")") | ("let" ~ ident ~ "=" ~ addSub ~ "in" ~ addSub ~ "end").map { case (x, erhs, ebody) => Let (x, erhs, ebody) })
+    val parens : Parser[Expr] = P (atom | ("(" ~ addSub ~ ")") | ("if" ~ addSub ~ "then" ~ addSub ~ "else" ~ addSub ~ "fi").map { case (x, erhs, ebody) => Let (x, erhs, ebody) })
     val mult : Parser[Expr] = P (parens ~ ("*".! ~ parens).rep.map (s => s.toList)).map (foldAssocLeft)
     val addSub : Parser[Expr] = P (mult ~ (("+" | "-").! ~ mult).rep.map (s => s.toList)).map (foldAssocLeft)
     val start : Parser[Expr] = P (addSub ~ End)
