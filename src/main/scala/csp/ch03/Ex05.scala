@@ -1,7 +1,6 @@
 package csp.ch03
 
 // From SBT: ~run-main csp.ch03.Ex05
-
 object Ex05 {
   object MyParsersNoWhitespace {
     import fastparse.all._
@@ -38,6 +37,7 @@ object Ex05 {
   case class Var (nm : String)                        extends Expr
   case class Let (nm : String, e1 : Expr, e2 : Expr)  extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr) extends Expr
+  case class If (e1: Expr,e2: Expr,e3: Expr)          extends Expr
 
   def lookup (env : List[(String, Int)], x : String) : Int = {
     env match {
@@ -59,6 +59,7 @@ object Ex05 {
       case Prim ("*", e1, e2) => eval (e1, env) * eval (e2, env)
       case Prim ("-", e1, e2) => eval (e1, env) - eval (e2, env)
       case Prim (  _,  _,  _) => throw new RuntimeException ("unknown primitive")
+
     }
   }
 
@@ -68,6 +69,7 @@ object Ex05 {
       case Var (x)              => x
       case Let (x, erhs, ebody) => "let %s = %s in %s end".format (x, pp (erhs), pp (ebody))
       case Prim (op, e1, e2)    => "(%s %s %s)".format (pp (e1), op, pp (e2))
+      case If (e1, e2, e3)    => "If %s then %s else %s fi".format(pp(e1), pp(e2), pp(e3))
     }
   }
 
@@ -102,14 +104,16 @@ object Ex05 {
     println ("=" * 80)
 
     val p01 : Parser[Expr] = MyParsers.start
-    testEval (p01,  "1 + 2 * 3")
-    testEval (p01, "1-2- 3")
+    testEval (p01, "1 + 2 * 3")
+    testEval (p01, "1 - 2 - 3")
     testEval (p01, "1 + -2")
     testEval (p01, "x++")
     testEval (p01, "1 + 1.2")
-    testEval (p01,  "1 + ")
+    testEval (p01, "1 + ")
     testEval (p01, "let z = (17) in z + 2 * 3 end")
     testEval (p01, "let z = 17) in z + 2 * 3 end")
+    testEval (p01, "let in = (17) in z + 2 * 3 end")
+    testEval (p01, "1 + let x=5 in let y=7+x in y+y end + x end")
     println ("=" * 80)
   }
 }

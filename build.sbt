@@ -19,7 +19,7 @@ resolvers ++= Seq(
 libraryDependencies ++= Seq(
   "org.scalatest"  %% "scalatest"  % "2.2.1"  % "test",
   "org.scalacheck" %% "scalacheck" % "1.11.5" % "test",
-  "org.pegdown"    %  "pegdown"    % "1.4.2"  % "test"
+  "org.pegdown"    %  "pegdown"    % "1.4.2"  % "test",
+  "com.lihaoyi"		 %% "fastparse" % "0.4.1"
 )
-
 seq(SbtStartScript.startScriptForClassesSettings: _*)
