@@ -55,7 +55,7 @@ object Project {
   case class Prim (nm : String, e1 : Expr, e2 : Expr) extends Expr
 
   sealed trait Statement
-  case class Print(e: String)                                                    extends Statement
+  case class Print(s: String)                                                    extends Statement
   case class PrintStatement(e: Expr)                                             extends Statement
   case class AssigStatement(nm: String, e1: Expr)                                extends Statement 
   case class If (e : Expr, s1 : Statement, s2 : Statement)                       extends Statement
@@ -162,12 +162,27 @@ object Project {
         }
         loop (store)
       }
+      case Print (s)               => {
+        println ((s, store))
+        store
+      }
+
       case PrintStatement (e)               => {
         println (eval (e, store))
         store
       }
     }
   }
+
+
+ val helloWorld : Statement = {
+    Block (
+      List (
+        Print("hello world")
+      )
+    )
+  }
+
 
   val factorial : Statement = {
       Block (
@@ -221,6 +236,9 @@ object Project {
 
     // TODO: dafuq be NaiveStore
     exec(factorial, emptyStore)
+    println ("=" * 80)
+
+    exec(helloWorld, emptyStore)
     println ("=" * 80)
 
 
