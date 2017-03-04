@@ -39,11 +39,11 @@ object Project {
      val printStatement : P [Statement] =
       P (("System.Console.WriteLine" ~ "(" ~ (stringLiteral | ident) ~ ")" ~ ";").map{case(e) => Print(e)})
     
-     val statements : P [List[Statement]] =
-       P ((((assigStatement|printStatement).rep).map { case(e1) => Statements(e1.toList)}) 
+     val statements : P [Statement] =
+       P (((assigStatement|printStatement).rep).map {case(e1) => Statements(e1.toList)})
 
      val forLoop : P[Statement] =
-       P (("for" ~ "(" ~"int".? ~ ident ~ "=" ~ integer ~ ";" ~ ident ~ logic ~ integer ~ ";" ~ ident ~ logic ~ ")" ~ "{" ~ (statements | methods) ~ "}").map{case(nm, low, high, s) => For(nm, low, high, s)})
+       P (("for" ~ "(" ~"int".? ~ ident ~ "=" ~ integer ~ ";" ~ ident ~ logic ~ integer ~ ";" ~ ident ~ logic ~ ")" ~ "{" ~ (statements) ~ "}").map{case(nm, low, s1, high, s2) => For(nm, low, s1, high, s2, s)})
 
      val methods : P[Methods] =
       P (("public".? ~ "static".? ~ ident.map( s => ()) ~ ident  ~ "(" ~ (ident ~ ident ~ ",".?).rep ~ ")" ~ "{" ~ statements ~ "}").map{case(nm, parameters, body) => Methods(nm, parameters.toList, body)})
@@ -71,7 +71,7 @@ object Project {
   case class Statements(e1: List[Statement])                                extends Statement  
   case class If (e : Expr, s1 : Statement, s2 : Statement)                       extends Statement
   case class Block (ss : List[Statement])                                        extends Statement
-  case class For (nm : String, low : Expr, high : Expr, s : Statement)           extends Statement
+  case class For (nm : String, low : Expr, s1: String, high : Expr, s2: Statement)           extends Statement
   case class While (e : Expr, s : Statement)                                     extends Statement
 
   def foldAssocLeft (p : (Expr, List[(String,Expr)])) : Expr = {
@@ -151,7 +151,7 @@ object Project {
         }
         loop (ss, store)
       }
-      case For (nm, low, high, s)  => {
+      case For (nm, low, s1, high, s2)  => {
         val start : Int = eval (low, store) 
         val stop : Int = eval (high, store)
         def loop (i : Int, sto : NaiveStore) : NaiveStore = {
