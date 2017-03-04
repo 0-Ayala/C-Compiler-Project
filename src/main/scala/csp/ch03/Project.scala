@@ -30,7 +30,7 @@ object Project {
     val parens : Parser[Expr] = P (integer | ("(" ~ addSub ~ ")"))
     val mult : Parser[Expr] = P (parens ~ ("*".! ~ parens).rep.map (s => s.toList)).map (foldAssocLeft)
     val addSub : Parser[Expr] = P (mult ~ (("+" | "-").! ~ mult).rep.map (s => s.toList)).map (foldAssocLeft)
-   
+    val logic : Parser[Unit] = P ((( "==" | "<=" | ">=" | "!=" | ">" | "<" | "++" | "--")).map{case (s) => Logic(s)})
    //PARSERS! <3
      
      val assigStatement : P[Statement] = 
@@ -40,24 +40,35 @@ object Project {
       P (("System.Console.WriteLine" ~ "(" ~ (stringLiteral | ident) ~ ")" ~ ";").map{case(e) => Print(e)})
     
      val statements : P [List[Statement]] =
-       P (((assigStatement|printStatement).rep).map { case (s) => s.toList})//.map{case(nm, e1) => AssigStatement(nm, e1)}) 
+       P ((((assigStatement|printStatement).rep).map { case(e1) => Statements(e1.toList)}) 
+
+     val forLoop : P[Statement] =
+       P (("for" ~ "(" ~"int".? ~ ident ~ "=" ~ integer ~ ";" ~ ident ~ logic ~ integer ~ ";" ~ ident ~ logic ~ ")" ~ "{" ~ (statements | methods) ~ "}").map{case(nm, low, high, s) => For(nm, low, high, s)})
 
      val methods : P[Methods] =
-      P ("public".? ~ "static".? ~ ident.map( s => ()) ~ ident  ~ "(" ~ (ident ~ ident ~ ",".?).rep ~ ")" ~ "{" ~ statements ~ "}").map{case(nm, parameters, body) => Methods(nm, parameters.toList, body)}
+      P (("public".? ~ "static".? ~ ident.map( s => ()) ~ ident  ~ "(" ~ (ident ~ ident ~ ",".?).rep ~ ")" ~ "{" ~ statements ~ "}").map{case(nm, parameters, body) => Methods(nm, parameters.toList, body)})
+     
+
   }
   case class Methods(nm: String, parameters: List[(String, String)], body : List[Statement])
-  //case class Clazz (nm: String, ss: Statements, m: Methods, )
+  case class Clazz (nm: String, ss: List[(Statements)], methods: List[(Methods)] )
 
   sealed trait Expr
   case class CstI (n : Int)                           extends Expr
   case class Var (nm : String)                        extends Expr
-  case class Let (nm : String, e1 : Expr, e2 : Expr)  extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr) extends Expr
+  case class Logic(e1: Unit)                          extends Expr
+  //handle objects, classes, new, wll be similar to a function calls, field access, and method calls
+
+  //case class ew (nmL strung, args, list9expr0) expr
+  //case class field(obj:expr, nm: string) expr
+  //case class methodcall(objLexpr.......)
 
   sealed trait Statement
   case class Print(s: String)                                                    extends Statement
   case class PrintStatement(e: Expr)                                             extends Statement
-  case class AssigStatement(nm: String, e1: Expr)                                extends Statement 
+  case class AssigStatement(nm: String, e1: Expr)                                extends Statement
+  case class Statements(e1: List[Statement])                                extends Statement  
   case class If (e : Expr, s1 : Statement, s2 : Statement)                       extends Statement
   case class Block (ss : List[Statement])                                        extends Statement
   case class For (nm : String, low : Expr, high : Expr, s : Statement)           extends Statement
@@ -243,4 +254,5 @@ object Project {
 
 
   }
+
 }
