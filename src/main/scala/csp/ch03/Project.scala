@@ -43,14 +43,14 @@ object Project {
        P (((assigStatement|printStatement).rep).map {case(e1) => Statements(e1.toList)})
 
      val forLoop : P[Statement] =
-       P (("for" ~ "(" ~"int".? ~ ident ~ "=" ~ integer ~ ";" ~ ident ~ logic ~ integer ~ ";" ~ ident ~ logic ~ ")" ~ "{" ~ (statements) ~ "}").map{case(nm, low, s1, high, s2) => For(nm, low, s1, high, s2, s)})
+       P (("for" ~ "(" ~"int".? ~ ident ~ "=" ~ integer ~ ";" ~ ident ~ logic ~ integer ~ ";" ~ ident ~ logic ~ ")" ~ "{" ~ (statements) ~ "}").map{case(nm, low, s1, high, s2, st) => For(nm, low, s1, high, s2, st)})
 
      val methods : P[Methods] =
-      P (("public".? ~ "static".? ~ ident.map( s => ()) ~ ident  ~ "(" ~ (ident ~ ident ~ ",".?).rep ~ ")" ~ "{" ~ statements ~ "}").map{case(nm, parameters, body) => Methods(nm, parameters.toList, body)})
+      P (("public".? ~ "static".? ~ ident.map( s => ()) ~ ident  ~ "(" ~ (ident ~ ident ~ ",".?).rep ~ ")" ~ "{" ~ statements ~ "}").map{case(nm, parameters, body) => Methods(nm, parameters.toList, body.toList)})
      
 
   }
-  case class Methods(nm: String, parameters: List[(String, String)], body : List[Statement])
+  case class Methods(nm: String, parameters: List[(String, String)], body : Statements)
   case class Clazz (nm: String, ss: List[(Statements)], methods: List[(Methods)] )
 
   sealed trait Expr
@@ -65,14 +65,14 @@ object Project {
   //case class methodcall(objLexpr.......)
 
   sealed trait Statement
-  case class Print(s: String)                                                    extends Statement
-  case class PrintStatement(e: Expr)                                             extends Statement
-  case class AssigStatement(nm: String, e1: Expr)                                extends Statement
-  case class Statements(e1: List[Statement])                                extends Statement  
-  case class If (e : Expr, s1 : Statement, s2 : Statement)                       extends Statement
-  case class Block (ss : List[Statement])                                        extends Statement
-  case class For (nm : String, low : Expr, s1: String, high : Expr, s2: Statement)           extends Statement
-  case class While (e : Expr, s : Statement)                                     extends Statement
+  case class Print(s: String)                                                                            extends Statement
+  case class PrintStatement(e: Expr)                                                                     extends Statement
+  case class AssigStatement(nm: String, e1: Expr)                                                        extends Statement
+  case class Statements(e1: List[Statement])                                                             extends Statement  
+  case class If (e : Expr, s1 : Statement, s2 : Statement)                                               extends Statement
+  case class Block (ss : List[Statement])                                                                extends Statement
+  case class For (nm : String, low : Expr, s1: String, high : Expr, s2: String, st: Statement)           extends Statement
+  case class While (e : Expr, s : Statement)                                                             extends Statement
 
   def foldAssocLeft (p : (Expr, List[(String,Expr)])) : Expr = {
     p match {
