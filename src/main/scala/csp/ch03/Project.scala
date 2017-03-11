@@ -12,8 +12,13 @@ object Project {
     val keywords : List[String] = List ("let", "in", "end")
     val alpha : Parser[String] = P ((CharIn ('A' to 'Z') | CharIn ('a' to 'z')).!)
     val ident : Parser[String] = P ((alpha ~ (alpha | CharIn ('0' to '9')).rep (0)).!).filter (s => !keywords.contains (s))
+    val qual : Parser[List[String]] = P ( ident.rep (1, sep = ".").map (s => s.toList) )
     val stringLiteral : Parser[String] = P ("\"".? ~ (alpha ~ (alpha | CharIn ('0' to '9') | " ").rep (0)).! ~ "\"".?)
-    val variable : Parser[Expr] = ident.map(s => Var(s))
+    // val literal_string : Parser[String] = P ("\"" ~ (CharIn (' ' to '!') |
+    //                                                  CharIn ('#' to '~')
+    //                                                  ).rep ().! ~ "\"" )
+    val variable : Parser[Expr] = ident.map(s => Var(List(s)))
+
   }
 
   object MyParsers {
@@ -29,50 +34,85 @@ object Project {
 
     val parens : Parser[Expr] = P (integer | ("(" ~ addSub ~ ")"))
     val mult : Parser[Expr] = P (parens ~ ("*".! ~ parens).rep.map (s => s.toList)).map (foldAssocLeft)
-    val addSub : Parser[Expr] = P (mult ~ (("+" | "-").! ~ mult).rep.map (s => s.toList)).map (foldAssocLeft)
-    val logic : Parser[Unit] = P ((( "==" | "<=" | ">=" | "!=" | ">" | "<" | "++" | "--")).map{case (s) => Logic(s)})
-   //PARSERS! <3
-     
-     val assigStatement : P[Statement] = 
-      P (( "int".? ~ ident ~ "=" ~ integer ~ ";").map{case(nm, e1) => AssigStatement(nm, e1)})
 
-     val printStatement : P [Statement] =
-      P (("System.Console.WriteLine" ~ "(" ~ (stringLiteral | ident) ~ ")" ~ ";").map{case(e) => Print(e)})
+    val typ : Parser[Unit] = P (
+        ("int" | "void" | "string[]")
+    )
+
+    val atExpr : Parser[Expr] = P (
+      integer | 
+      variable |
+      (qual ~ ("(" ~ expr.rep (sep = ",").map (s => s.toList) ~ ")").?).map {   
+        case (nm, None)      => Var (nm)
+        case (nm, Some (es)) => Call (nm, es)
+      } | 
+      ("(" ~ expr ~ ")") 
+    )
     
-     val statements : P [Statement] =
-       P (((assigStatement|printStatement).rep).map {case(e1) => Statements(e1.toList)})
 
-     val forLoop : P[Statement] =
-       P (("for" ~ "(" ~"int".? ~ ident ~ "=" ~ integer ~ ";" ~ ident ~ logic ~ integer ~ ";" ~ ident ~ logic ~ ")" ~ "{" ~ (statements) ~ "}").map{case(nm, low, s1, high, s2, st) => For(nm, low, s1, high, s2, st)})
+    val multDiv : Parser[Expr] = P (
+      ((atExpr ~ (("*" | "/" | "*=").! ~ atExpr).rep.map (s => s.toList)).map (foldAssocLeft)))
 
-     val methods : P[Methods] =
-      P (("public".? ~ "static".? ~ ident.map( s => ()) ~ ident  ~ "(" ~ (ident ~ ident ~ ",".?).rep ~ ")" ~ "{" ~ statements ~ "}").map{case(nm, parameters, body) => Methods(nm, parameters.toList, body.toList)})
+    val addSub : Parser[Expr] = P (
+      ((multDiv ~ (("+" | "++" | "-" | "%").! ~ multDiv).rep.map (s => s.toList)).map (foldAssocLeft)))
+
+    val gtLtGeLeExpr : Parser[Expr] = P (
+      ((addSub ~ (("||" | ">" | "<" | ">=" | "<=" | "!" | "&&").! ~ addSub).rep.map (s => s.toList)).map (foldAssocLeft)))
+
+    val eqNeExpr : Parser[Expr] = P (
+      ((gtLtGeLeExpr ~ (("==" | "!=").! ~ gtLtGeLeExpr).rep.map (s => s.toList)).map (foldAssocLeft)))
+
+    val assignExpr : Parser[Expr] = P((eqNeExpr ~ ("=".! ~ eqNeExpr).rep.map (s => s.toList)).map (foldAssocLeft))
+
+    val expr : Parser[Expr] = P (eqNeExpr)
+
+    val statement : Parser[Stmt] = P ((
+        ( typ.? ~ ident ~ "=" ~ expr ~ ";").map{case (nm, e) => Decl(nm, e)} |
+        ( typ.? ~ ident ~ "=" ~ assignExpr ~ ";").map{case (nm, e) => Decl(nm, e)} |                                  // for variable declarations
+        ( expr ~ ";" ).map{case (e) => StmtExpr(e)} |                                                           // for expressions used as statements
+        ( "if" ~ "(" ~ expr ~ ")" ~ statement ~ "else".? ~ statement ).map{case (e, s1, s2) => If(e, s1, s2)} |   // if-then-else
+        ( "while" ~ "(" ~ expr ~ ")" ~ statement).map{case (e, s) => While(e, s)} |                            // while
+        ("System.Console.WriteLine" ~ "(" ~ stringLiteral ~ ")" ~ ";").map{case (s) => PrintLiteralString(s)} |
+        (ident ~ "(" ~ expr ~ ")" ~ ";").map { case (nm, e) => FuncDef (nm, e) } |
+        ( "return " ~ expr ~ ";" ).map{case (e) => Return(e)} |                                             // return
+        ( "{" ~ statement.rep ~ "}").map{case (ss) => Block(ss.toList)}                                         // blocks
+    )) 
+
+     val method : Parser[Method] = P (
+      (
+        "public".? ~ "static" ~ typ ~ ident ~ "(" ~ (typ ~ ident).rep (sep = ",") ~ ")"  ~ statement ).map{case(nm, params, body) => Method(nm, params.toList, body)})
      
+     val clazz : Parser[Clazz] = P (
+        ("public" ~ "class" ~ ident ~  "{" ~ method.rep ~ "}").map { case (nm, methods) => Clazz (nm, methods.toList) }
+    )
 
   }
-  case class Methods(nm: String, parameters: List[(String, String)], body : Statements)
-  case class Clazz (nm: String, ss: List[(Statements)], methods: List[(Methods)] )
+  //Why does body have to be a list of Statements even though Statements has block which treats a bunch of statements as a list of statements?
+  case class Method (nm: String, params: List[(String)], body : Stmt)
 
+  case class Clazz (nm: String, methods: List[Method])    
+
+      // These definitions for parsing expressions are adapted from NaiveCodeGenFunc.scala
   sealed trait Expr
-  case class CstI (n : Int)                           extends Expr
-  case class Var (nm : String)                        extends Expr
-  case class Prim (nm : String, e1 : Expr, e2 : Expr) extends Expr
-  case class Logic(e1: Unit)                          extends Expr
-  //handle objects, classes, new, wll be similar to a function calls, field access, and method calls
+  case class CstI (n : Int)                                           extends Expr
+  case class CstS (s : String)                                        extends Expr
+  case class Var (nms : List[String])                                 extends Expr
+  case class NVar(s: String)                                          extends Expr
+  case class Prim (nm : String, e1 : Expr, e2 : Expr)                 extends Expr
+  case class Call (nm : List[String], es : List[Expr])                extends Expr
+  case class Typ (s: String)                                          extends Expr
 
-  //case class ew (nmL strung, args, list9expr0) expr
-  //case class field(obj:expr, nm: string) expr
-  //case class methodcall(objLexpr.......)
 
-  sealed trait Statement
-  case class Print(s: String)                                                                            extends Statement
-  case class PrintStatement(e: Expr)                                                                     extends Statement
-  case class AssigStatement(nm: String, e1: Expr)                                                        extends Statement
-  case class Statements(e1: List[Statement])                                                             extends Statement  
-  case class If (e : Expr, s1 : Statement, s2 : Statement)                                               extends Statement
-  case class Block (ss : List[Statement])                                                                extends Statement
-  case class For (nm : String, low : Expr, s1: String, high : Expr, s2: String, st: Statement)           extends Statement
-  case class While (e : Expr, s : Statement)                                                             extends Statement
+  sealed trait Stmt
+  case class Decl (nm : String, e : Expr)                         extends Stmt
+  case class RDecl (nm: String, e: Expr)                          extends Stmt
+  case class StmtExpr (e : Expr)                                  extends Stmt
+  case class If (e : Expr, s1 : Stmt, s2 : Stmt)                  extends Stmt
+  case class While (e : Expr, s : Stmt)                           extends Stmt
+  case class Return (e : Expr)                                    extends Stmt
+  case class Block (ss : List[Stmt])                              extends Stmt
+  case class PrintLiteralString (s : String)                      extends Stmt
+  case class FuncDef (nm : String, e: Expr)                       extends Stmt
 
   def foldAssocLeft (p : (Expr, List[(String,Expr)])) : Expr = {
     p match {
@@ -113,7 +153,8 @@ object Project {
   def eval (e : Expr, store : NaiveStore) : Int = {
     e match {
       case CstI (i)           => i
-      case Var (x)            => getSto (store, x)
+      //Why is Var a list of strings?
+      case NVar (x)            => getSto (store, x)
       case Prim (op, e1, e2) => {
         val i1 = eval (e1, store) 
         val i2 = eval (e2, store)
@@ -133,9 +174,9 @@ object Project {
     }
   }
 
-  def exec (s : Statement, store : NaiveStore) : NaiveStore = {
+  def exec (s : Stmt, store : NaiveStore) : NaiveStore = {
     s match {
-      case AssigStatement (nm, e)            => {
+      case Decl(nm, e)            => {
         val v : Int = eval (e, store)
         // println ("store is %s".format (store))
         // println ("assigning %d to %s".format (v, nm))
@@ -143,7 +184,7 @@ object Project {
       }
       case If (e, s1, s2)          => exec (if (eval (e, store) != 0) s1 else s2, store)
       case Block (ss)              => {
-        def loop (ss2 : List[Statement], store2 : NaiveStore) : NaiveStore = {
+        def loop (ss2 : List[Stmt], store2 : NaiveStore) : NaiveStore = {
           ss2 match {
             case Nil       => store2
             case s2 :: ss3 => loop (ss3, exec (s2, store2))
@@ -151,18 +192,18 @@ object Project {
         }
         loop (ss, store)
       }
-      case For (nm, low, s1, high, s2)  => {
-        val start : Int = eval (low, store) 
-        val stop : Int = eval (high, store)
-        def loop (i : Int, sto : NaiveStore) : NaiveStore = {
-          if (i > stop) {
-            sto 
-          } else {
-            loop (i + 1, exec (s, setSto (sto, nm, i)))
-          }
-        }
-        loop (start, store)
-      }
+      // case For (nm, low, high, s)  => {
+      //   val start : Int = eval (low, store) 
+      //   val stop : Int = eval (high, store)
+      //   def loop (i : Int, sto : NaiveStore) : NaiveStore = {
+      //     if (i > stop) {
+      //       sto 
+      //     } else {
+      //       loop (i + 1, exec (s, setSto (sto, nm, i)))
+      //     }
+      //   }
+      //   loop (start, store)
+      // }
       case While (e, s)            => {
         def loop (sto : NaiveStore) : NaiveStore = {
           if (eval (e, sto) != 0) {
@@ -173,86 +214,130 @@ object Project {
         }
         loop (store)
       }
-      case Print (s)               => {
-        println ((s, store))
-        store
-      }
+      // case Print (s)               => {
+      //   println ((s, store))
+      //   store
+      // }
 
-      case PrintStatement (e)               => {
-        println (eval (e, store))
-        store
-      }
+      // case statement (e)               => {
+      //   println (eval (e, store))
+      //   store
+      // }
     }
   }
 
 
- val helloWorld : Statement = {
-    Block (
-      List (
-        Print("hello world")
-      )
-    )
-  }
+ // val helloWorld : Stmt = {
+ //    Block (
+ //      List (
+ //        Print("hello world")
+ //      )
+ //    )
+ //  }
 
 
-  val factorial : Statement = {
-      Block (
-        List (
-          AssigStatement (
-            "fact", 
-            CstI (1)
-          ),
-          For (
-            "i", 
-            CstI (1), 
-            CstI (10), 
-            AssigStatement (
-              "fact", 
-              Prim ("*", Var ("fact"), Var ("i"))
-            )
-          ),
-          PrintStatement (Var ("fact"))
-        )
-      )
-    }
+  // val factorial : Stmt = {
+  //     Block (
+  //       List (
+  //         statement (
+  //           "fact", 
+  //           CstI (1)
+  //         ),
+  //         For (
+  //           "i", 
+  //           CstI (1), 
+  //           CstI (10), 
+  //           statement (
+  //             "fact", 
+  //             Prim ("*", Var ("fact"), Var ("i"))
+  //           )
+  //         ),
+  //         statement (Var ("fact"))
+  //       )
+  //     )
+  //   }
+
+  
 
   def main (args : Array[String]) {
     println ("=" * 80)
 
-    val p01 : Parser[Any] = MyParsers.methods
-    //test (p01, "int x = 2;")
-    //test (p01, "System.Console.WriteLine ( x );")
-    test (p01, """public static void main(){
-      System.Console.WriteLine("hello world");
-    }""")
+    val p01 : Parser[Any] = MyParsers.clazz
 
-    println ("=" * 80)
-
-    test (p01, """static int Factorial(int number)
+    test (p01, """public class Program
     {
-        int accumulator = 1;
-        for (int factor = 1; factor <= number; factor++)
-        {
-            accumulator *= factor;
-        }
-        return accumulator;
+      static void Main(int args) {
+        System.Console.WriteLine("Hello world");
+    }    
     }
- 
-    static void Main()
-    {
-        System.Console.WriteLine(Factorial(10));
+""")
+
+    println ("=" * 80)
+
+    test (p01, """public class Program {
+    static void Main(){
+      int accumulator = 1;
+      int factor = 1;
+      int number = 10;
+      while (factor < number){
+        accumulator = accumulator * factor;
+        factor = factor + 1;
+
+      }
+      System.Console.WriteLine(accumulator);
+
+    }
+}""")
+
+    println ("=" * 80)
+
+    val p02 : Parser[Any] = MyParsers.clazz
+
+    test (p02, """public class Program {
+      static void Main(){
+        int number = 0;
+        while(number < 101){
+            System.Console.WriteLine(number);
+            number = number + 1;
+          }
+       }
+    
+
     }""")
 
     println ("=" * 80)
 
-    // TODO: dafuq be NaiveStore
-    exec(factorial, emptyStore)
+    val p03 : Parser[Any] = MyParsers.clazz
+
+    test (p03, """public class Program {
+      static void Main(){
+        int count = 0;
+        int number = 100;
+        while (count < number){
+          if(count % 3 == 0 && count % 5 == 0){
+            count = (count + 1);
+          }
+          if (count % 3 == 0){
+            count = (count + 1);
+          }
+          if (count % 5 == 0) {
+            count = (count + 1);
+          }
+          System.Console.WriteLine(count);
+          count = (count + 1);
+
+        }
+      }
+      }""")
+
     println ("=" * 80)
 
-    exec(helloWorld, emptyStore)
+
+    val p04 : Parser[Any] = MyParsers.statement
+
+    test (p04, """int count = 0;""")
+
     println ("=" * 80)
-
-
   }
 
 }
