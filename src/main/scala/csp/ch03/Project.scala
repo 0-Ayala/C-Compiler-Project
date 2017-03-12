@@ -17,7 +17,7 @@ object Project {
     // val literal_string : Parser[String] = P ("\"" ~ (CharIn (' ' to '!') |
     //                                                  CharIn ('#' to '~')
     //                                                  ).rep ().! ~ "\"" )
-    val variable : Parser[Expr] = ident.map(s => Var(List(s)))
+    val variable : Parser[Expr] = ident.map(s => Var(s))
 
   }
 
@@ -43,7 +43,7 @@ object Project {
       integer | 
       variable |
       (qual ~ ("(" ~ expr.rep (sep = ",").map (s => s.toList) ~ ")").?).map {   
-        case (nm, None)      => Var (nm)
+        case (nm, None)      => NVar (nm)
         case (nm, Some (es)) => Call (nm, es)
       } | 
       ("(" ~ expr ~ ")") 
@@ -96,8 +96,8 @@ object Project {
   sealed trait Expr
   case class CstI (n : Int)                                           extends Expr
   case class CstS (s : String)                                        extends Expr
-  case class Var (nms : List[String])                                 extends Expr
-  case class NVar(s: String)                                          extends Expr
+  case class NVar (nms : List[String])                                 extends Expr
+  case class Var(s: String)                                          extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr)                 extends Expr
   case class Call (nm : List[String], es : List[Expr])                extends Expr
   case class Typ (s: String)                                          extends Expr
@@ -123,11 +123,12 @@ object Project {
 
   import fastparse.all.{Parsed,Parser}
 
-  def test (p : Parser[Any], s : String) : Unit = {
-    val result : fastparse.core.Parsed[Any, Char, String] = p.parse (s) 
+  def test (p : Parser[Clazz], s : String) : Unit = {
+    val result : fastparse.core.Parsed[Clazz, Char, String] = p.parse (s) 
     result match {
       case Parsed.Success (value, successIndex) => {
         println ("Successfully parsed \"%s\".  Result is %s.  Index is %d.".format (s, value, successIndex))
+      compile(value)
       }
       case Parsed.Failure (lastParser, index, extra) => {
         println ("Failed to parse \"%s\".  Last parser is %s.  Index is %d.  Extra is %s".format (s, lastParser, index, extra))
@@ -154,7 +155,7 @@ object Project {
     e match {
       case CstI (i)           => i
       //Why is Var a list of strings?
-      case NVar (x)            => getSto (store, x)
+      case Var (x)            => getSto (store, x)
       case Prim (op, e1, e2) => {
         val i1 = eval (e1, store) 
         val i2 = eval (e2, store)
@@ -257,12 +258,317 @@ object Project {
   //     )
   //   }
 
-  
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Code Generation
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  type Env = Map[String,String]
+  type FuncEnv = Map[String,Method]
+
+  val emptyEnv : Env = Map.empty
+
+  var labelCounter : Int = 0
+  def newLabel () : String = {
+    labelCounter = labelCounter + 1
+    "lab%03d".format (labelCounter)
+  }
+
+  // Generate x86-64 assembly to evaluate e.
+  // Result is at the top of the stack.
+  // The following registers may be changed by the generated assembly language: %rax, %rbx, %rsp, %rip
+  def compileExpr (e : Expr, env : Env, fenv : FuncEnv) : String = {
+    e match {
+      case CstI (i)           => 
+        "\tpushq\t$%d\n".format (i)
+      case Var (x)            => 
+        env.get (x) match {
+          case None => throw new RuntimeException ("unable to find variable %s in environment".format (x))
+          case Some (lab) => 
+            "\tpushq\t%s\n".format (lab)
+        }
+      case Prim (op, e1, e2) => {
+        val insts1 = compileExpr (e1, env, fenv) 
+        val insts2 = compileExpr (e2, env, fenv)
+        val push = "\tpushq\t%rax\n"
+        def pop (reg : String) = "\tpopq\t%%%s\n".format (reg)
+        val instsOp : String = op match {
+          case  "+" => "\taddq\t%rbx, %rax\n"
+          case  "-" => "\tsubq\t%rbx, %rax\n"
+          case  "*" => "\timulq\t%rbx, %rax\n"
+          case  "=" => {
+            "\tcmpq\t%rbx, %rax\n" +    // sets ZF if ((rax-rbx) = 0) as signed, i.e., (rax = rbx)
+            "\tsete\t%al\n" +           // sets low-order byte (%al) of %rax to 1 if ZF is set, otherwise to 0
+            "\tmovzbl\t%al, %eax\n"     // extends %al to %rax (recall that assignment to a 32-bit register clears the upper 32-bits of the corresponding 64-bit register)
+          }
+          case "/" => {
+            "\tcltd\n" +
+            "\tidivq\t%rbx\n"
+          }
+          case "%" => {
+            "\tcltd\n" +
+            "\tidivq\t%rbx\n" +
+            "\tmovq\t%rdx,\t%rax\n"
+          }
+
+          case "&&" => {
+                "\tmovl    \t8(%esp), \t%edx" +
+                "\txorl    \t%eax, \t%eax" +
+                "\tmovl    \t4(%esp), \t%ecx" +  
+                "\ttestl   \t%edx, \t%edx" + 
+                "\tsetne   \t%al" +
+                "\txorl    \t%edx, \t%edx" + 
+                "\ttestl   \t%ecx, \t%ecx" +
+                "\tsetne   \t%dl" +
+                "\tandl    \t%edx, \t%eax"
+          }
+          case "==" => {
+            "\tcmpq\t%rbx, %rax\n" +
+            "\tsete\t%al\n" +
+            "\tmovzbl\t%al, %eax\n"
+          }
+          case "!=" => {
+            "\tcmpq\t%rbx, %rax\n" +
+            "\tsetne\t%al\n" +
+            "\tmovzbl\t%al, %eax\n"
+          }
+          case "<=" => {
+            "\tcmpq\t%rbx, %rax\n" +
+            "\tsetle\t%al\n" +
+            "\tmovzbl\t%al, %eax\n"
+          }
+
+          // case "<>" => b2i (i1 != i2) 
+          case  "<" => {
+            "\tcmpq\t%rbx, %rax\n" +    // sets SF if ((rax-rbx) < 0) as signed, i.e., (rax < rbx)
+            "\tsets\t%al\n" +           // sets low-order byte (%al) of %rax to 1 if SF is set, otherwise to 0
+            "\tmovzbl\t%al, %eax\n"     // extends %al to %rax (recall that assignment to a 32-bit register clears the upper 32-bits of the corresponding 64-bit register)
+          }
+          // case  ">" => b2i (i1 > i2) 
+          // case "<=" => b2i (i1 <= i2) 
+          // case ">=" => b2i (i1 >= i2) 
+          case   _ => throw new RuntimeException ("unknown primitive " + op)
+        }
+        insts1 +
+        insts2 +
+        pop ("rbx") +
+        pop ("rax") +
+        instsOp + 
+        push
+      }
+      case Call (nm, es) => {
+        es.reverse.map (e => compileExpr (e, env, fenv)).mkString +
+        "\tcall\t%s\n".format (nm) + 
+        "\taddq\t$%d, %%rsp\n".format (es.length * 8) +
+        "\tpushq\t%rax\n"
+      }
+    }
+  }
+
+  def compileAll (clazz: Clazz, env : Env, fenv : FuncEnv) : String = {
+    header () + 
+    //compileFunc (Method (nm, params, body), env, fenv) + 
+    "\n" +
+    clazz.methods.map (fd => compileFunc (fd, env, fenv)).mkString ("\n") + 
+    footer (env)
+  }
+
+  def header () : String = {
+    ""
+  }
+
+  def footer (env : Env) : String = {
+    "\n" +
+    "\t.section .rodata\n" + 
+    ".output:\n" + 
+    "\t.string \"%d\\n\"\n" +
+    "\n" +
+    (for ((nm1, _) <- env) yield {
+      "\t.globl\t%s\n".format (nm1) +
+      "\t.data\n".format (nm1) +
+      "\t.align\t8\n" +
+      "\t.size\t%s, 8\n".format (nm1) +
+      "%s:\n".format (nm1) +
+      "\t.quad\t0\n" +
+      "\n"
+    }).mkString
+  }
+
+  def compileFunc (methods: Method, env : Env, fenv : FuncEnv) : String = {
+    val header = {
+      "\t.text\n" +
+      "\t.globl\t%s\n".format (methods.nm) +
+      "\t.type\t%s, @function\n".format (methods.nm) +
+      "%s:\n".format (methods.nm) + 
+      "\tpushq\t%rbp\n" + 
+      "\tmovq\t%rsp, %rbp\n" 
+    }
+    val footer = {
+      "\tpopq\t%rbp\n" + 
+      "\tret\n"
+    }
+    var env2 : Env = env
+    for ((param, i) <- methods.params.zipWithIndex) {
+      env2 = env2 + ( (param, "%d(%%rbp)".format ((i + 2) * 8)) ) 
+    }
+    header + 
+    compileStmt (methods.body, env2, fenv) + 
+    footer
+  }
+
+  def compileStmt (s : Stmt, env : Env, fenv : FuncEnv) : String = {
+    s match {
+      case Decl (nm, e)            => {
+        env.get (nm) match {
+          case None => throw new RuntimeException ("unable to find variable %s in environment".format (nm))
+          case Some (lab) => 
+            compileExpr (e, env, fenv) + 
+            "\tpopq\t%rax\n" +
+            "\tmovq\t%%rax, %s\n".format (lab)
+      }
+    }
+
+    // def compileStr (s : String, env : Env, fenv : FuncEnv) : String = {
+    // s match {
+    //     case PrintLiteralString(s) => {List()}
+    //     }
+    //   }
+      case If (e, s1, s2)          => {
+        val label1 = newLabel ()
+        val label2 = newLabel ()
+        val label3 = newLabel () 
+        compileExpr (e, env, fenv) +
+        "\tpopq\t%rax\n" + 
+        "\ttestq\t%rax, %rax\n" + 
+        "\tjne\t%s\n".format (label1) +
+        "\tjmp\t%s\n".format (label2) +
+        "%s:\n".format (label1) +
+        compileStmt (s1, env, fenv) +
+        "\tjmp\t%s\n".format (label3) +
+        "%s:\n".format (label2) +
+        compileStmt (s2, env, fenv) +
+        "%s:\n".format (label3) 
+      }
+      case Block (ss)              => {
+        def loop (ss2 : List[Stmt]) : String = {
+          ss2 match {
+            case Nil       => ""
+            case s2 :: ss3 => compileStmt (s2, env, fenv) + loop (ss3)
+          }
+        }
+        loop (ss)
+      }
+      // case For (nm, low, high, s)  => {
+      //   val label1 = newLabel ()
+      //   val label2 = newLabel ()
+      //   "// for (%s := %s to %s)\n".format (nm, ppExpr (low), ppExpr (high)) +
+      //   compileExpr (low, env, fenv) + 
+      //   "\tpopq\t%rax\n" + 
+      //   "\tmovq\t%%rax, (%s)\n".format (nm) +
+      //   "\tjmp\t%s\n".format (label2) +
+      //   "%s:\n".format (label1) +
+      //   compileStmt (s, env, fenv) +
+      //   "\tmovq\t(%s), %%rax\n".format (nm) +
+      //   "\taddq\t$1, %rax\n" +
+      //   "\tmovq\t%%rax, (%s)\n".format (nm) +
+      //   "%s:\n".format (label2) +
+      //   compileExpr (high, env, fenv) + 
+      //   "\tpopq\t%rbx\n" + 
+      //   "\tmovq\t(%s), %%rax\n".format (nm) +
+      //   "\tcmpq\t%rbx, %rax\n" + 
+      //   "\tjle\t%s\n".format (label1)
+      // }
+      case While (e, s)            => {
+        val label1 = newLabel ()
+        val label2 = newLabel ()
+        "\tjmp\t%s\n".format (label2) +
+        "%s:\n".format (label1) +
+        compileStmt (s, env, fenv) +
+        "%s:\n".format (label2) +
+        compileExpr (e, env, fenv) + 
+        "\tpopq\t%rax\n" + 
+        "\ttestq\t%rax, %rax\n" + 
+        "\tjne\t%s\n".format (label1)
+      }
+      case PrintLiteralString (s)               => {
+        "\t.section\t.rodata\n" + 
+        "LC0:\n" +
+        "\t.string\t\"%s\n".format (s) +
+        "\t.text\n" +
+        "\tpopq\t%rsi\n" +
+        "\tmovl\t$.output, %edi\n" + 
+        "\tmovl\t$0, %eax\n" +
+        "\tcall\tprintf\n"
+      }
+      case Return (e)               => { 
+        compileExpr (e, env, fenv) +
+        "\tpopq\t%rax\n" +
+        "\tpopq\t%rbp\n" + 
+        "\tret\n"
+      }
+    }
+  }
+
+  def findVarsExpr (e : Expr) : List[String] = {
+    e match {
+      case CstI (i)           => Nil
+      case Var (x)            => List (x)
+      case Prim (op, e1, e2)  => findVarsExpr (e1) ::: findVarsExpr (e2)
+      case Call (nm, es)      => es.flatMap (findVarsExpr)
+    }
+  }
+
+  def findVarsStmt (s : Stmt) : List[String] = {
+    s match {
+      case Decl (nm, e)            => nm :: findVarsExpr (e)
+      case If (e, s1, s2)          => findVarsExpr (e) ::: findVarsStmt (s1) ::: findVarsStmt (s2)
+      case Block (ss)              => {
+        def loop (ss2 : List[Stmt]) : List[String] = {
+          ss2 match {
+            case Nil       => Nil
+            case s2 :: ss3 => findVarsStmt (s2) ::: loop (ss3)
+          }
+        }
+        loop (ss)
+      }
+      // case For (nm, low, high, s)  => {
+      //   nm :: findVarsExpr (low) ::: findVarsExpr (high) ::: findVarsStmt (s)
+      // }
+      case While (e, s)            => {
+        findVarsExpr (e) ::: findVarsStmt (s)
+      }
+      case PrintLiteralString(s) => {
+        List()
+      }
+      case Return (e)              => {
+        findVarsExpr (e)
+      }
+    }
+  }
+
+  def findVars (s : Stmt) : List[String] = {
+    findVarsStmt (s).toSet.toList.sortWith ((s1,s2) => s1 < s2)
+  }
+
+    def compile (clazz : Clazz) : Unit = {
+    val menv : FuncEnv = (for (md <- clazz.methods) yield (md.nm, md)).toMap
+    val vars : List[String] = for (stmt <- (clazz.methods.map (m => m.body)); v <- findVars (stmt)) yield v
+    val env : Env = (for (v <- vars) yield (v, "(%s)".format (v))).toMap
+    println ("Variables: %s".format (env.mkString (", ")))
+    println ("Compiling:")
+    val asm : String = compileAll (clazz, env, menv)
+    //val asmFilename = filename.replace (".cs", ".s")
+    //val fw = new java.io.FileWriter (asmFilename)
+    // fw.write (asm)
+    // fw.close
+    // println ("Wrote to %s".format (asmFilename))
+    // //invokeAssemblerLinker (asmFilename)
+    println (asm)
+  }
 
   def main (args : Array[String]) {
     println ("=" * 80)
 
-    val p01 : Parser[Any] = MyParsers.clazz
+    val p01 : Parser[Clazz] = MyParsers.clazz
 
     test (p01, """public class Program
     {
@@ -291,7 +597,7 @@ object Project {
 
     println ("=" * 80)
 
-    val p02 : Parser[Any] = MyParsers.clazz
+    val p02 : Parser[Clazz] = MyParsers.clazz
 
     test (p02, """public class Program {
       static void Main(){
@@ -307,37 +613,25 @@ object Project {
 
     println ("=" * 80)
 
-    val p03 : Parser[Any] = MyParsers.clazz
+    val p03 : Parser[Clazz] = MyParsers.clazz
 
     test (p03, """public class Program {
       static void Main(){
         int count = 0;
         int number = 100;
         while (count < number){
-          if(count % 3 == 0 && count % 5 == 0){
-            count = (count + 1);
-          }
-          if (count % 3 == 0){
-            count = (count + 1);
-          }
-          if (count % 5 == 0) {
-            count = (count + 1);
+          if(count % 3){
+            count = count + 1;
+          } else {
+            count = count + 1;
           }
           System.Console.WriteLine(count);
-          count = (count + 1);
-
         }
       }
       }""")
 
     println ("=" * 80)
-
-
-    val p04 : Parser[Any] = MyParsers.statement
-
-    test (p04, """int count = 0;""")
-
-    println ("=" * 80)
+  //LBL09 is empty because thT would be where for loop would be except I haven't made forloop parser
   }
 
 }
