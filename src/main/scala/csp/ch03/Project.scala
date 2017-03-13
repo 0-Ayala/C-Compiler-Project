@@ -96,8 +96,8 @@ object Project {
   sealed trait Expr
   case class CstI (n : Int)                                           extends Expr
   case class CstS (s : String)                                        extends Expr
-  case class NVar (nms : List[String])                                 extends Expr
-  case class Var(s: String)                                          extends Expr
+  case class NVar (nms : List[String])                                extends Expr
+  case class Var(s: String)                                           extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr)                 extends Expr
   case class Call (nm : List[String], es : List[Expr])                extends Expr
   case class Typ (s: String)                                          extends Expr
@@ -111,6 +111,7 @@ object Project {
   case class While (e : Expr, s : Stmt)                           extends Stmt
   case class Return (e : Expr)                                    extends Stmt
   case class Block (ss : List[Stmt])                              extends Stmt
+  case class Print (e : Expr)                                     extends Stmt
   case class PrintLiteralString (s : String)                      extends Stmt
   case class FuncDef (nm : String, e: Expr)                       extends Stmt
 
@@ -311,15 +312,15 @@ object Project {
           }
 
           case "&&" => {
-                "\tmovl    \t8(%esp), \t%edx" +
-                "\txorl    \t%eax, \t%eax" +
-                "\tmovl    \t4(%esp), \t%ecx" +  
-                "\ttestl   \t%edx, \t%edx" + 
-                "\tsetne   \t%al" +
-                "\txorl    \t%edx, \t%edx" + 
-                "\ttestl   \t%ecx, \t%ecx" +
-                "\tsetne   \t%dl" +
-                "\tandl    \t%edx, \t%eax"
+                "\tmovl\t8(%esp), %edx\n" +
+                "\txorl\t%eax, %eax\n" +
+                "\tmovlt4(%esp), %ecx\n" +  
+                "\ttestl\t%edx, %edx\n" + 
+                "\tsetne\t%al\n" +
+                "\txorl\t%edx, %edx\n" + 
+                "\ttestl\t%ecx, %ecx\n" +
+                "\tsetne\t%dl\n" +
+                "\tandl\t%edx, %eax\n"
           }
           case "==" => {
             "\tcmpq\t%rbx, %rax\n" +
@@ -489,10 +490,17 @@ object Project {
         "\ttestq\t%rax, %rax\n" + 
         "\tjne\t%s\n".format (label1)
       }
+      case Print (e)               => {
+        compileExpr (e, env, fenv) +
+        "\tpopq\t%rsi\n" +
+        "\tmovl\t$.output, %edi\n" + 
+        "\tmovl\t$0, %eax\n" +
+        "\tcall\tprintf\n"
+      }
       case PrintLiteralString (s)               => {
         "\t.section\t.rodata\n" + 
         "LC0:\n" +
-        "\t.string\t\"%s\n".format (s) +
+        "\t.string\t\"%s\"\n".format (s) +
         "\t.text\n" +
         "\tpopq\t%rsi\n" +
         "\tmovl\t$.output, %edi\n" + 
@@ -572,7 +580,7 @@ object Project {
 
     test (p01, """public class Program
     {
-      static void Main(int args) {
+      static void main(int args) {
         System.Console.WriteLine("Hello world");
     }    
     }
@@ -581,16 +589,14 @@ object Project {
     println ("=" * 80)
 
     test (p01, """public class Program {
-    static void Main(){
-      int accumulator = 1;
+    static void main(){
       int factor = 1;
       int number = 10;
-      while (factor < number){
-        accumulator = accumulator * factor;
-        factor = factor + 1;
-
+      while (number != 0){
+        factor = factor * number;
+        number = number - 1;
       }
-      System.Console.WriteLine(accumulator);
+      System.Console.WriteLine(factor);
 
     }
 }""")
@@ -600,7 +606,7 @@ object Project {
     val p02 : Parser[Clazz] = MyParsers.clazz
 
     test (p02, """public class Program {
-      static void Main(){
+      static void main(){
         int number = 0;
         while(number < 101){
             System.Console.WriteLine(number);
@@ -616,16 +622,22 @@ object Project {
     val p03 : Parser[Clazz] = MyParsers.clazz
 
     test (p03, """public class Program {
-      static void Main(){
+      static void main(){
         int count = 0;
         int number = 100;
         while (count < number){
-          if(count % 3){
-            count = count + 1;
-          } else {
-            count = count + 1;
+          if(count % 3 == 0 && count % 5 == 0){
+            count = (count + 1);
+          }
+          if (count % 3 == 0){
+            count = (count + 1);
+          }
+          if (count % 5 == 0) {
+            count = (count + 1);
           }
           System.Console.WriteLine(count);
+          count = (count + 1);
+
         }
       }
       }""")
