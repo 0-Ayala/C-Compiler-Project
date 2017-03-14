@@ -40,10 +40,9 @@ object Project {
     )
 
     val atExpr : Parser[Expr] = P (
-      integer | 
-      variable |
-      (qual ~ ("(" ~ expr.rep (sep = ",").map (s => s.toList) ~ ")").?).map {   
-        case (nm, None)      => NVar (nm)
+      integer |
+      (ident ~ ("(" ~ expr.rep (sep = ",").map (s => s.toList) ~ ")").?).map {   
+        case (nm, None)      => Var (nm)
         case (nm, Some (es)) => Call (nm, es)
       } | 
       ("(" ~ expr ~ ")") 
@@ -72,6 +71,7 @@ object Project {
         ( expr ~ ";" ).map{case (e) => StmtExpr(e)} |                                                           // for expressions used as statements
         ( "if" ~ "(" ~ expr ~ ")" ~ statement ~ "else".? ~ statement ).map{case (e, s1, s2) => If(e, s1, s2)} |   // if-then-else
         ( "while" ~ "(" ~ expr ~ ")" ~ statement).map{case (e, s) => While(e, s)} |                            // while
+        ("System.Console.WriteLine" ~ "(" ~ expr ~ ")" ~ ";").map{case (e) => Print(e)} |
         ("System.Console.WriteLine" ~ "(" ~ stringLiteral ~ ")" ~ ";").map{case (s) => PrintLiteralString(s)} |
         (ident ~ "(" ~ expr ~ ")" ~ ";").map { case (nm, e) => FuncDef (nm, e) } |
         ( "return " ~ expr ~ ";" ).map{case (e) => Return(e)} |                                             // return
@@ -96,10 +96,10 @@ object Project {
   sealed trait Expr
   case class CstI (n : Int)                                           extends Expr
   case class CstS (s : String)                                        extends Expr
-  case class NVar (nms : List[String])                                extends Expr
+  //case class NVar (nms : List[String])                                extends Expr
   case class Var(s: String)                                           extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr)                 extends Expr
-  case class Call (nm : List[String], es : List[Expr])                extends Expr
+  case class Call (nm : String, es : List[Expr])                extends Expr
   case class Typ (s: String)                                          extends Expr
 
 
@@ -314,7 +314,7 @@ object Project {
           case "&&" => {
                 "\tmovl\t8(%esp), %edx\n" +
                 "\txorl\t%eax, %eax\n" +
-                "\tmovlt4(%esp), %ecx\n" +  
+                "\tmovl\t4(%esp), %ecx\n" +  
                 "\ttestl\t%edx, %edx\n" + 
                 "\tsetne\t%al\n" +
                 "\txorl\t%edx, %edx\n" + 
@@ -498,14 +498,13 @@ object Project {
         "\tcall\tprintf\n"
       }
       case PrintLiteralString (s)               => {
-        "\t.section\t.rodata\n" + 
-        "LC0:\n" +
-        "\t.string\t\"%s\"\n".format (s) +
-        "\t.text\n" +
-        "\tpopq\t%rsi\n" +
-        "\tmovl\t$.output, %edi\n" + 
-        "\tmovl\t$0, %eax\n" +
-        "\tcall\tprintf\n"
+          val label = newLabel()
+          "\t.section\t.rodata\n" +
+          "%s:\n".format(label) + 
+          "\t.string\t\"%s\"\n".format(s) +
+          "\t.text\n" +
+          "\tmovl\t$%s, %%edi\n".format(label) +
+          "\tcall\tputs\n"
       }
       case Return (e)               => { 
         compileExpr (e, env, fenv) +
@@ -549,7 +548,15 @@ object Project {
       }
       case Return (e)              => {
         findVarsExpr (e)
+          }
+      case StmtExpr (e) => {
+        findVarsExpr(e)
       }
+
+      case Print(e) => {
+        findVarsExpr(e)
+      }
+      
     }
   }
 
@@ -564,6 +571,7 @@ object Project {
     println ("Variables: %s".format (env.mkString (", ")))
     println ("Compiling:")
     val asm : String = compileAll (clazz, env, menv)
+    
     //val asmFilename = filename.replace (".cs", ".s")
     //val fw = new java.io.FileWriter (asmFilename)
     // fw.write (asm)
@@ -572,6 +580,7 @@ object Project {
     // //invokeAssemblerLinker (asmFilename)
     println (asm)
   }
+
 
   def main (args : Array[String]) {
     println ("=" * 80)
@@ -626,18 +635,15 @@ object Project {
         int count = 0;
         int number = 100;
         while (count < number){
-          if(count % 3 == 0 && count % 5 == 0){
-            count = (count + 1);
+          if(count % 15 == 0){
           }
-          if (count % 3 == 0){
-            count = (count + 1);
+          else if (count % 3 == 0){
           }
-          if (count % 5 == 0) {
-            count = (count + 1);
-          }
+          else if (count % 5 == 0) {
+          } else {
           System.Console.WriteLine(count);
+        }
           count = (count + 1);
-
         }
       }
       }""")
