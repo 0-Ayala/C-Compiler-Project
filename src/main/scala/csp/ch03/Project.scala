@@ -13,10 +13,7 @@ object Project {
     val alpha : Parser[String] = P ((CharIn ('A' to 'Z') | CharIn ('a' to 'z')).!)
     val ident : Parser[String] = P ((alpha ~ (alpha | CharIn ('0' to '9')).rep (0)).!).filter (s => !keywords.contains (s))
     val qual : Parser[List[String]] = P ( ident.rep (1, sep = ".").map (s => s.toList) )
-    val stringLiteral : Parser[String] = P ("\"".? ~ (alpha ~ (alpha | CharIn ('0' to '9') | " ").rep (0)).! ~ "\"".?)
-    // val literal_string : Parser[String] = P ("\"" ~ (CharIn (' ' to '!') |
-    //                                                  CharIn ('#' to '~')
-    //                                                  ).rep ().! ~ "\"" )
+    val stringLiteral : Parser[String] = P ("\"".? ~ (alpha ~ (alpha | CharIn ('0' to '9') | CharIn (' ' to '!') | CharIn ('#' to '~') | " ").rep (0)).! ~ "\"".?)
     val variable : Parser[Expr] = ident.map(s => Var(s))
 
   }
@@ -48,12 +45,11 @@ object Project {
       ("(" ~ expr ~ ")") 
     )
     
-
     val multDiv : Parser[Expr] = P (
-      ((atExpr ~ (("*" | "/" | "*=").! ~ atExpr).rep.map (s => s.toList)).map (foldAssocLeft)))
+      ((atExpr ~ (("*" | "/" | "%").! ~ atExpr).rep.map (s => s.toList)).map (foldAssocLeft)))
 
     val addSub : Parser[Expr] = P (
-      ((multDiv ~ (("+" | "++" | "-" | "%").! ~ multDiv).rep.map (s => s.toList)).map (foldAssocLeft)))
+      ((multDiv ~ (("++" | "+" | "-" ).! ~ multDiv).rep.map (s => s.toList)).map (foldAssocLeft)))
 
     val gtLtGeLeExpr : Parser[Expr] = P (
       ((addSub ~ (("||" | ">" | "<" | ">=" | "<=" | "!" | "&&").! ~ addSub).rep.map (s => s.toList)).map (foldAssocLeft)))
@@ -64,19 +60,24 @@ object Project {
     val assignExpr : Parser[Expr] = P((eqNeExpr ~ ("=".! ~ eqNeExpr).rep.map (s => s.toList)).map (foldAssocLeft))
 
     val expr : Parser[Expr] = P (eqNeExpr)
-
+    
+    
     val statement : Parser[Stmt] = P ((
+        ("//" ~ stringLiteral).map { case (c) => Comment()} |
         ( typ.? ~ ident ~ "=" ~ expr ~ ";").map{case (nm, e) => Decl(nm, e)} |
         ( typ.? ~ ident ~ "=" ~ assignExpr ~ ";").map{case (nm, e) => Decl(nm, e)} |                                  // for variable declarations
         ( expr ~ ";" ).map{case (e) => StmtExpr(e)} |                                                           // for expressions used as statements
         ( "if" ~ "(" ~ expr ~ ")" ~ statement ~ "else".? ~ statement ).map{case (e, s1, s2) => If(e, s1, s2)} |   // if-then-else
         ( "while" ~ "(" ~ expr ~ ")" ~ statement).map{case (e, s) => While(e, s)} |                            // while
         ("System.Console.WriteLine" ~ "(" ~ expr ~ ")" ~ ";").map{case (e) => Print(e)} |
-        ("System.Console.WriteLine" ~ "(" ~ stringLiteral ~ ")" ~ ";").map{case (s) => PrintLiteralString(s)} |
+        ("System.Console.WriteLine" ~ "(" ~ (stringLiteral) ~ ")" ~ ";").map{case (s) => PrintLiteralString(s)} |
         (ident ~ "(" ~ expr ~ ")" ~ ";").map { case (nm, e) => FuncDef (nm, e) } |
         ( "return " ~ expr ~ ";" ).map{case (e) => Return(e)} |                                             // return
-        ( "{" ~ statement.rep ~ "}").map{case (ss) => Block(ss.toList)}                                         // blocks
+        //("for" ~ "(" ~ ident ~ ";" ~ expr ~ ";" ~ assignExpr ~ ")" ~ statement).map { case (nm, e1, e2, s) => For (nm, e1, e2, s) } |
+        ( "{" ~ statement.rep ~ "}").map{case (ss) => Block(ss.toList)} |                                         // blocks
+        (expr ~ ";").map (e => FuncCall(e))
     )) 
+
 
      val method : Parser[Method] = P (
       (
@@ -89,25 +90,20 @@ object Project {
      val start : Parser[Clazz] = P (clazz ~ End)
 
   }
-  //Why does body have to be a list of Statements even though Statements has block which treats a bunch of statements as a list of statements?
   case class Method (nm: String, params: List[(String)], body : Stmt)
 
   case class Clazz (nm: String, methods: List[Method])    
 
-      // These definitions for parsing expressions are adapted from NaiveCodeGenFunc.scala
   sealed trait Expr
   case class CstI (n : Int)                                           extends Expr
   case class CstS (s : String)                                        extends Expr
-  //case class NVar (nms : List[String])                                extends Expr
   case class Var(s: String)                                           extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr)                 extends Expr
   case class Call (nm : String, es : List[Expr])                      extends Expr
   case class Typ (s: String)                                          extends Expr
 
-
   sealed trait Stmt
   case class Decl (nm : String, e : Expr)                         extends Stmt
-  case class RDecl (nm: String, e: Expr)                          extends Stmt
   case class StmtExpr (e : Expr)                                  extends Stmt
   case class If (e : Expr, s1 : Stmt, s2 : Stmt)                  extends Stmt
   case class While (e : Expr, s : Stmt)                           extends Stmt
@@ -116,6 +112,9 @@ object Project {
   case class Print (e : Expr)                                     extends Stmt
   case class PrintLiteralString (s : String)                      extends Stmt
   case class FuncDef (nm : String, e: Expr)                       extends Stmt
+  case class For (nm : String, low : Expr, high : Expr, s : Stmt) extends Stmt
+  case class FuncCall(e: Expr)                                    extends Stmt
+  case class Comment ()                                           extends Stmt
 
   def foldAssocLeft (p : (Expr, List[(String,Expr)])) : Expr = {
     p match {
@@ -178,24 +177,24 @@ object Project {
     }
   }
 
-  def exec (s : Stmt, store : NaiveStore) : NaiveStore = {
-    s match {
-      case Decl(nm, e)            => {
-        val v : Int = eval (e, store)
-        // println ("store is %s".format (store))
-        // println ("assigning %d to %s".format (v, nm))
-        setSto (store, nm, v)
-      }
-      case If (e, s1, s2)          => exec (if (eval (e, store) != 0) s1 else s2, store)
-      case Block (ss)              => {
-        def loop (ss2 : List[Stmt], store2 : NaiveStore) : NaiveStore = {
-          ss2 match {
-            case Nil       => store2
-            case s2 :: ss3 => loop (ss3, exec (s2, store2))
-          }
-        }
-        loop (ss, store)
-      }
+  // def exec (s : Stmt, store : NaiveStore) : NaiveStore = {
+  //   s match {
+  //     case Decl(nm, e)            => {
+  //       val v : Int = eval (e, store)
+  //       // println ("store is %s".format (store))
+  //       // println ("assigning %d to %s".format (v, nm))
+  //       setSto (store, nm, v)
+  //     }
+  //     case If (e, s1, s2)          => exec (if (eval (e, store) != 0) s1 else s2, store)
+  //     case Block (ss)              => {
+  //       def loop (ss2 : List[Stmt], store2 : NaiveStore) : NaiveStore = {
+  //         ss2 match {
+  //           case Nil       => store2
+  //           case s2 :: ss3 => loop (ss3, exec (s2, store2))
+  //         }
+  //       }
+  //       loop (ss, store)
+  //     }
       // case For (nm, low, high, s)  => {
       //   val start : Int = eval (low, store) 
       //   val stop : Int = eval (high, store)
@@ -208,16 +207,16 @@ object Project {
       //   }
       //   loop (start, store)
       // }
-      case While (e, s)            => {
-        def loop (sto : NaiveStore) : NaiveStore = {
-          if (eval (e, sto) != 0) {
-            loop (exec (s, sto))
-          } else {
-            sto
-          }
-        }
-        loop (store)
-      }
+      // case While (e, s)            => {
+      //   def loop (sto : NaiveStore) : NaiveStore = {
+      //     if (eval (e, sto) != 0) {
+      //       loop (exec (s, sto))
+      //     } else {
+      //       sto
+      //     }
+      //   }
+      //   loop (store)
+      // }
       // case Print (s)               => {
       //   println ((s, store))
       //   store
@@ -227,8 +226,8 @@ object Project {
       //   println (eval (e, store))
       //   store
       // }
-    }
-  }
+  //   }
+  // }
 
 
  // val helloWorld : Stmt = {
@@ -514,6 +513,11 @@ object Project {
         "\tpopq\t%rbp\n" + 
         "\tret\n"
       }
+      case FuncCall(e) => {
+        compileExpr(e, env, fenv)
+      }
+
+      case Comment () => {""}
     }
   }
 
@@ -557,6 +561,14 @@ object Project {
 
       case Print(e) => {
         findVarsExpr(e)
+      }
+
+      case FuncCall(e) => {
+        findVarsExpr(e)
+      }
+
+      case Comment()  => {
+        List()
       }
       
     }
