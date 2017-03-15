@@ -86,6 +86,8 @@ object Project {
         ("public" ~ "class" ~ ident ~  "{" ~ method.rep ~ "}").map { case (nm, methods) => Clazz (nm, methods.toList) }
     )
 
+     val start : Parser[Clazz] = P (clazz ~ End)
+
   }
   //Why does body have to be a list of Statements even though Statements has block which treats a bunch of statements as a list of statements?
   case class Method (nm: String, params: List[(String)], body : Stmt)
@@ -99,7 +101,7 @@ object Project {
   //case class NVar (nms : List[String])                                extends Expr
   case class Var(s: String)                                           extends Expr
   case class Prim (nm : String, e1 : Expr, e2 : Expr)                 extends Expr
-  case class Call (nm : String, es : List[Expr])                extends Expr
+  case class Call (nm : String, es : List[Expr])                      extends Expr
   case class Typ (s: String)                                          extends Expr
 
 
@@ -124,18 +126,18 @@ object Project {
 
   import fastparse.all.{Parsed,Parser}
 
-  def test (p : Parser[Clazz], s : String) : Unit = {
-    val result : fastparse.core.Parsed[Clazz, Char, String] = p.parse (s) 
-    result match {
-      case Parsed.Success (value, successIndex) => {
-        println ("Successfully parsed \"%s\".  Result is %s.  Index is %d.".format (s, value, successIndex))
-      compile(value)
-      }
-      case Parsed.Failure (lastParser, index, extra) => {
-        println ("Failed to parse \"%s\".  Last parser is %s.  Index is %d.  Extra is %s".format (s, lastParser, index, extra))
-      }
-    }
-  }
+  // def test (p : Parser[Clazz], s : String) : Unit = {
+  //   val result : fastparse.core.Parsed[Clazz, Char, String] = p.parse (s) 
+  //   result match {
+  //     case Parsed.Success (value, successIndex) => {
+  //       println ("Successfully parsed \"%s\".  Result is %s.  Index is %d.".format (s, value, successIndex))
+  //     compile(value)
+  //     }
+  //     case Parsed.Failure (lastParser, index, extra) => {
+  //       println ("Failed to parse \"%s\".  Last parser is %s.  Index is %d.  Extra is %s".format (s, lastParser, index, extra))
+  //     }
+  //   }
+  // }
 
   //NAIVESTORE//
   type NaiveStore = Map[String,Int]
@@ -564,91 +566,140 @@ object Project {
     findVarsStmt (s).toSet.toList.sortWith ((s1,s2) => s1 < s2)
   }
 
-    def compile (clazz : Clazz) : Unit = {
-    val menv : FuncEnv = (for (md <- clazz.methods) yield (md.nm, md)).toMap
-    val vars : List[String] = for (stmt <- (clazz.methods.map (m => m.body)); v <- findVars (stmt)) yield v
-    val env : Env = (for (v <- vars) yield (v, "(%s)".format (v))).toMap
-    println ("Variables: %s".format (env.mkString (", ")))
-    println ("Compiling:")
-    val asm : String = compileAll (clazz, env, menv)
-    
-    //val asmFilename = filename.replace (".cs", ".s")
-    //val fw = new java.io.FileWriter (asmFilename)
-    // fw.write (asm)
-    // fw.close
-    // println ("Wrote to %s".format (asmFilename))
-    // //invokeAssemblerLinker (asmFilename)
-    println (asm)
+    def compile (clazz : Clazz, filename: String) : Unit = {
+      val menv : FuncEnv = (for (md <- clazz.methods) yield (md.nm, md)).toMap
+      val vars : List[String] = for (stmt <- (clazz.methods.map (m => m.body)); v <- findVars (stmt)) yield v
+      val env : Env = (for (v <- vars) yield (v, "(%s)".format (v))).toMap
+      println ("Variables: %s".format (env.mkString (", ")))
+      println ("Compiling:")
+      val asm : String = compileAll (clazz, env, menv)
+      
+      val asmFilename = filename.replace (".cs", ".s")
+      val fw = new java.io.FileWriter (asmFilename)
+      fw.write (asm)
+      fw.close
+      println ("Wrote to %s".format (asmFilename))
+      //invokeAssemblerLinker (asmFilename)
+      println (asm)
   }
 
+  def readFile (filename : String) : String = {
+    val source : scala.io.BufferedSource = io.Source.fromFile (filename)
+    try source.getLines.mkString ("\n") finally source.close ()
+  }
+
+  // def compile (clazz : Clazz, filename: String) : Unit = {
+  //   val fenv : FuncEnv = (for (fd <- clazz.method) yield (fd.nm, fd)).toMap
+  //   val vars : List[String] = for (stmt <- (clazz.nm :: clazz.method.map (f => f.body)); v <- findVars (stmt)) yield v
+  //   val env : Env = (for (v <- vars) yield (v, "(%s)".format (v))).toMap
+  //   println ("Variables: %s".format (env.mkString (", ")))
+  //   println ("Compiling:")
+  //   val asm : String = compileAll (prog, env, fenv)
+  //   val asmFilename = filename.replace (".naive", ".s")
+  //   val fw = new java.io.FileWriter (asmFilename)
+  //   fw.write (asm)
+  //   fw.close
+  //   println ("Wrote to %s".format (asmFilename))
+  //   invokeAssemblerLinker (asmFilename)
+  //   // println (asm)
+  // }
+
+  def test (p : Parser[Clazz], filename : String) : Unit = {
+    val input : String = readFile (filename)
+    val result : fastparse.core.Parsed[Clazz, Char, String] = p.parse (input) 
+    result match {
+      case Parsed.Success (prog, successIndex) => {
+        println ("Successfully parsed file \"%s\".\nResult is %s.\nIndex is %d.".format (filename, prog, successIndex))
+        // println ("Pretty printing:")
+        // print (ppStmt ("  ", stmt))
+        compile (prog, filename)
+      }
+      case Parsed.Failure (lastParser, index, extra) => {
+        println ("Failed to parse file \"%s\".  Last parser is %s.  Index is %d.  Extra is %s".format (filename, lastParser, index, extra))
+      }
+    }
+  }
+
+
+//   def main (args : Array[String]) {
+//     println ("=" * 80)
+
+//     val p01 : Parser[Clazz] = MyParsers.clazz
+
+//     test (p01, """public class Program
+//     {
+//       static void main(int args) {
+//         System.Console.WriteLine("Hello world");
+//     }    
+//     }
+// """)
+
+//     println ("=" * 80)
+
+//     test (p01, """public class Program {
+//     static void main(){
+//       int factor = 1;
+//       int number = 10;
+//       while (number != 0){
+//         factor = factor * number;
+//         number = number - 1;
+//       }
+//       System.Console.WriteLine(factor);
+
+//     }
+// }""")
+
+//     println ("=" * 80)
+
+//     val p02 : Parser[Clazz] = MyParsers.clazz
+
+//     test (p02, """public class Program {
+//       static void main(){
+//         int number = 0;
+//         while(number < 101){
+//             System.Console.WriteLine(number);
+//             number = number + 1;
+//           }
+//        }
+    
+
+//     }""")
+
+//     println ("=" * 80)
+
+//     val p03 : Parser[Clazz] = MyParsers.clazz
+
+//     test (p03, """public class Program {
+//       static void main(){
+//         int count = 0;
+//         int number = 100;
+//         while (count < number){
+//           if(count % 15 == 0){
+//           }
+//           else if (count % 3 == 0){
+//           }
+//           else if (count % 5 == 0) {
+//           } else {
+//           System.Console.WriteLine(count);
+//         }
+//           count = (count + 1);
+//         }
+//       }
+//       }""")
+
+//     println ("=" * 80)
+//   }
+
+//}
 
   def main (args : Array[String]) {
     println ("=" * 80)
-
-    val p01 : Parser[Clazz] = MyParsers.clazz
-
-    test (p01, """public class Program
-    {
-      static void main(int args) {
-        System.Console.WriteLine("Hello world");
-    }    
-    }
-""")
-
-    println ("=" * 80)
-
-    test (p01, """public class Program {
-    static void main(){
-      int factor = 1;
-      int number = 10;
-      while (number != 0){
-        factor = factor * number;
-        number = number - 1;
-      }
-      System.Console.WriteLine(factor);
-
-    }
-}""")
-
-    println ("=" * 80)
-
-    val p02 : Parser[Clazz] = MyParsers.clazz
-
-    test (p02, """public class Program {
-      static void main(){
-        int number = 0;
-        while(number < 101){
-            System.Console.WriteLine(number);
-            number = number + 1;
-          }
-       }
     
-
-    }""")
-
-    println ("=" * 80)
-
-    val p03 : Parser[Clazz] = MyParsers.clazz
-
-    test (p03, """public class Program {
-      static void main(){
-        int count = 0;
-        int number = 100;
-        while (count < number){
-          if(count % 15 == 0){
-          }
-          else if (count % 3 == 0){
-          }
-          else if (count % 5 == 0) {
-          } else {
-          System.Console.WriteLine(count);
-        }
-          count = (count + 1);
-        }
-      }
-      }""")
-
-    println ("=" * 80)
+    import java.io.File
+    for (f <- new File ("./input").listFiles.toList.sortWith ((f1, f2) => f1.getName < f2.getName);
+         if (f.getName.endsWith (".cs"))) {
+      test (MyParsers.start, f.getPath)
+      println ("=" * 80)
+    }
   }
-
 }
