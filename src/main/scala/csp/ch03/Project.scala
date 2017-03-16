@@ -13,7 +13,7 @@ object Project {
     val alpha : Parser[String] = P ((CharIn ('A' to 'Z') | CharIn ('a' to 'z')).!)
     val ident : Parser[String] = P ((alpha ~ (alpha | CharIn ('0' to '9')).rep (0)).!).filter (s => !keywords.contains (s))
     val qual : Parser[List[String]] = P ( ident.rep (1, sep = ".").map (s => s.toList) )
-    val stringLiteral : Parser[String] = P ("\"".? ~ (alpha ~ (alpha | CharIn ('0' to '9') | CharIn (' ' to '!') | CharIn ('#' to '~') | " ").rep (0)).! ~ "\"".?)
+    val stringLiteral : Parser[String] = P ("\"".? ~ (alpha ~ (alpha | CharIn ('0' to '9') | CharIn (' ' to '!') | CharIn ('#' to '~') | " ").rep (0)).! ~ "\"".?) //Literally Strings. Everything.
     val variable : Parser[Expr] = ident.map(s => Var(s))
 
   }
@@ -62,21 +62,21 @@ object Project {
     val expr : Parser[Expr] = P (eqNeExpr)
     
     val statement : Parser[Stmt] = P ((
-        ("//" ~ stringLiteral).map { case (c) => Comment()} |
-        ("@" ~ CharsWhile(_ != '@').map(s=>()) ~ "@").map{case (c) => Comment()} |
-        ( typ.? ~ ident ~ "=" ~ expr ~ ";").map{case (nm, e) => Decl(nm, e)} |
+        ("//" ~ stringLiteral).map { case (c) => Comment()} |                                                         // In-Line Comment
+        ("@" ~ CharsWhile(_ != '@').map(s=>()) ~ "@").map{case (c) => Comment()} |                                    // Block Comment
+        ( typ.? ~ ident ~ "=" ~ expr ~ ";").map{case (nm, e) => Decl(nm, e)} |                                        // Reassignment
         ( typ.? ~ ident ~ "=" ~ assignExpr ~ ";").map{case (nm, e) => Decl(nm, e)} |                                  // for variable declarations
-        ( expr ~ ";" ).map{case (e) => StmtExpr(e)} |                                                           // for expressions used as statements
-        ( "if" ~ "(" ~ expr ~ ")" ~ statement ~ "else".? ~ statement ).map{case (e, s1, s2) => If(e, s1, s2)} |   // if-then-else
-        ( "while" ~ "(" ~ expr ~ ")" ~ statement).map{case (e, s) => While(e, s)} |                            // while
-        ("System.Console.WriteLine" ~ "(" ~ expr ~ ")" ~ ";").map{case (e) => Print(e)} |
-        ("System.Console.WriteLine" ~ "(" ~ (stringLiteral) ~ ")" ~ ";").map{case (s) => PrintLiteralString(s)} |
-        (ident ~ "(" ~ expr ~ ")" ~ ";").map { case (nm, e) => FuncDef (nm, e) } |
-        ( "return " ~ expr ~ ";" ).map{case (e) => Return(e)} |                                             // return
+        ( expr ~ ";" ).map{case (e) => StmtExpr(e)} |                                                                 // for expressions used as statements
+        ( "if" ~ "(" ~ expr ~ ")" ~ statement ~ "else".? ~ statement ).map{case (e, s1, s2) => If(e, s1, s2)} |       // if-then-else
+        ( "while" ~ "(" ~ expr ~ ")" ~ statement).map{case (e, s) => While(e, s)} |                                   // while
+        ("System.Console.WriteLine" ~ "(" ~ expr ~ ")" ~ ";").map{case (e) => Print(e)} |                             // Print expr
+        ("System.Console.WriteLine" ~ "(" ~ (stringLiteral) ~ ")" ~ ";").map{case (s) => PrintLiteralString(s)} |     // Print LITERAL string
+        (ident ~ "(" ~ expr ~ ")" ~ ";").map { case (nm, e) => FuncDef (nm, e) } |                                    // FuncDef
+        ( "return " ~ expr ~ ";" ).map{case (e) => Return(e)} |                                                       // return
         //("for" ~ "(" ~ ident ~ ";" ~ expr ~ ";" ~ assignExpr ~ ")" ~ statement).map { case (nm, e1, e2, s) => For (nm, e1, e2, s) } |
        //("for" ~ "(" ~ "int" ~ ident ~ "=" ~ integer ~ ";" ~ ident.map(s => ()) ~ gtLtGeLeExpr ~ integer ~ ";" ~ statement ~ ")" ~ statement) |
-        ( "{" ~ statement.rep ~ "}").map{case (ss) => Block(ss.toList)} |                                         // blocks
-        (expr ~ ";").map (e => FuncCall(e))
+        ( "{" ~ statement.rep ~ "}").map{case (ss) => Block(ss.toList)} |                                             // blocks
+        (expr ~ ";").map (e => FuncCall(e))                                                                           // FuncCall
     )) 
 
      val method : Parser[Method] = P (
@@ -87,7 +87,7 @@ object Project {
         ("public".? ~ "class" ~ ident ~  "{" ~ method.rep ~ "}").map { case (nm, methods) => Clazz (nm, methods.toList) }
     )
 
-     val start : Parser[Clazz] = P (clazz ~ End)
+     val start : Parser[Clazz] = P (clazz ~ End)                                                                     // Just to have a start and an end
 
   }
   case class Method (nm: String, params: List[(String)], body : Stmt)
@@ -124,19 +124,6 @@ object Project {
   }
 
   import fastparse.all.{Parsed,Parser}
-
-  // def test (p : Parser[Clazz], s : String) : Unit = {
-  //   val result : fastparse.core.Parsed[Clazz, Char, String] = p.parse (s) 
-  //   result match {
-  //     case Parsed.Success (value, successIndex) => {
-  //       println ("Successfully parsed \"%s\".  Result is %s.  Index is %d.".format (s, value, successIndex))
-  //     compile(value)
-  //     }
-  //     case Parsed.Failure (lastParser, index, extra) => {
-  //       println ("Failed to parse \"%s\".  Last parser is %s.  Index is %d.  Extra is %s".format (s, lastParser, index, extra))
-  //     }
-  //   }
-  // }
 
   //NAIVESTORE//
   type NaiveStore = Map[String,Int]
@@ -176,89 +163,6 @@ object Project {
       }
     }
   }
-
-  // def exec (s : Stmt, store : NaiveStore) : NaiveStore = {
-  //   s match {
-  //     case Decl(nm, e)            => {
-  //       val v : Int = eval (e, store)
-  //       // println ("store is %s".format (store))
-  //       // println ("assigning %d to %s".format (v, nm))
-  //       setSto (store, nm, v)
-  //     }
-  //     case If (e, s1, s2)          => exec (if (eval (e, store) != 0) s1 else s2, store)
-  //     case Block (ss)              => {
-  //       def loop (ss2 : List[Stmt], store2 : NaiveStore) : NaiveStore = {
-  //         ss2 match {
-  //           case Nil       => store2
-  //           case s2 :: ss3 => loop (ss3, exec (s2, store2))
-  //         }
-  //       }
-  //       loop (ss, store)
-  //     }
-      // case For (nm, low, high, s)  => {
-      //   val start : Int = eval (low, store) 
-      //   val stop : Int = eval (high, store)
-      //   def loop (i : Int, sto : NaiveStore) : NaiveStore = {
-      //     if (i > stop) {
-      //       sto 
-      //     } else {
-      //       loop (i + 1, exec (s, setSto (sto, nm, i)))
-      //     }
-      //   }
-      //   loop (start, store)
-      // }
-      // case While (e, s)            => {
-      //   def loop (sto : NaiveStore) : NaiveStore = {
-      //     if (eval (e, sto) != 0) {
-      //       loop (exec (s, sto))
-      //     } else {
-      //       sto
-      //     }
-      //   }
-      //   loop (store)
-      // }
-      // case Print (s)               => {
-      //   println ((s, store))
-      //   store
-      // }
-
-      // case statement (e)               => {
-      //   println (eval (e, store))
-      //   store
-      // }
-  //   }
-  // }
-
-
- // val helloWorld : Stmt = {
- //    Block (
- //      List (
- //        Print("hello world")
- //      )
- //    )
- //  }
-
-
-  // val factorial : Stmt = {
-  //     Block (
-  //       List (
-  //         statement (
-  //           "fact", 
-  //           CstI (1)
-  //         ),
-  //         For (
-  //           "i", 
-  //           CstI (1), 
-  //           CstI (10), 
-  //           statement (
-  //             "fact", 
-  //             Prim ("*", Var ("fact"), Var ("i"))
-  //           )
-  //         ),
-  //         statement (Var ("fact"))
-  //       )
-  //     )
-  //   }
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Code Generation
@@ -368,7 +272,6 @@ object Project {
 
   def compileAll (clazz: Clazz, env : Env, fenv : FuncEnv) : String = {
     header () + 
-    //compileFunc (Method (nm, params, body), env, fenv) + 
     "\n" +
     clazz.methods.map (fd => compileFunc (fd, env, fenv)).mkString ("\n") + 
     footer (env)
@@ -428,12 +331,6 @@ object Project {
             "\tmovq\t%%rax, %s\n".format (lab)
       }
     }
-
-    // def compileStr (s : String, env : Env, fenv : FuncEnv) : String = {
-    // s match {
-    //     case PrintLiteralString(s) => {List()}
-    //     }
-    //   }
       case If (e, s1, s2)          => {
         val label1 = newLabel ()
         val label2 = newLabel ()
@@ -600,22 +497,6 @@ object Project {
     try source.getLines.mkString ("\n") finally source.close ()
   }
 
-  // def compile (clazz : Clazz, filename: String) : Unit = {
-  //   val fenv : FuncEnv = (for (fd <- clazz.method) yield (fd.nm, fd)).toMap
-  //   val vars : List[String] = for (stmt <- (clazz.nm :: clazz.method.map (f => f.body)); v <- findVars (stmt)) yield v
-  //   val env : Env = (for (v <- vars) yield (v, "(%s)".format (v))).toMap
-  //   println ("Variables: %s".format (env.mkString (", ")))
-  //   println ("Compiling:")
-  //   val asm : String = compileAll (prog, env, fenv)
-  //   val asmFilename = filename.replace (".naive", ".s")
-  //   val fw = new java.io.FileWriter (asmFilename)
-  //   fw.write (asm)
-  //   fw.close
-  //   println ("Wrote to %s".format (asmFilename))
-  //   invokeAssemblerLinker (asmFilename)
-  //   // println (asm)
-  // }
-
   def test (p : Parser[Clazz], filename : String) : Unit = {
     val input : String = readFile (filename)
     val result : fastparse.core.Parsed[Clazz, Char, String] = p.parse (input) 
@@ -631,78 +512,6 @@ object Project {
       }
     }
   }
-
-
-//   def main (args : Array[String]) {
-//     println ("=" * 80)
-
-//     val p01 : Parser[Clazz] = MyParsers.clazz
-
-//     test (p01, """public class Program
-//     {
-//       static void main(int args) {
-//         System.Console.WriteLine("Hello world");
-//     }    
-//     }
-// """)
-
-//     println ("=" * 80)
-
-//     test (p01, """public class Program {
-//     static void main(){
-//       int factor = 1;
-//       int number = 10;
-//       while (number != 0){
-//         factor = factor * number;
-//         number = number - 1;
-//       }
-//       System.Console.WriteLine(factor);
-
-//     }
-// }""")
-
-//     println ("=" * 80)
-
-//     val p02 : Parser[Clazz] = MyParsers.clazz
-
-//     test (p02, """public class Program {
-//       static void main(){
-//         int number = 0;
-//         while(number < 101){
-//             System.Console.WriteLine(number);
-//             number = number + 1;
-//           }
-//        }
-    
-
-//     }""")
-
-//     println ("=" * 80)
-
-//     val p03 : Parser[Clazz] = MyParsers.clazz
-
-//     test (p03, """public class Program {
-//       static void main(){
-//         int count = 0;
-//         int number = 100;
-//         while (count < number){
-//           if(count % 15 == 0){
-//           }
-//           else if (count % 3 == 0){
-//           }
-//           else if (count % 5 == 0) {
-//           } else {
-//           System.Console.WriteLine(count);
-//         }
-//           count = (count + 1);
-//         }
-//       }
-//       }""")
-
-//     println ("=" * 80)
-//   }
-
-//}
 
   def main (args : Array[String]) {
     println ("=" * 80)
