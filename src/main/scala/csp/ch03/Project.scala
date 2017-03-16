@@ -61,9 +61,9 @@ object Project {
 
     val expr : Parser[Expr] = P (eqNeExpr)
     
-    
     val statement : Parser[Stmt] = P ((
         ("//" ~ stringLiteral).map { case (c) => Comment()} |
+        ("@" ~ CharsWhile(_ != '@').map(s=>()) ~ "@").map{case (c) => Comment()} |
         ( typ.? ~ ident ~ "=" ~ expr ~ ";").map{case (nm, e) => Decl(nm, e)} |
         ( typ.? ~ ident ~ "=" ~ assignExpr ~ ";").map{case (nm, e) => Decl(nm, e)} |                                  // for variable declarations
         ( expr ~ ";" ).map{case (e) => StmtExpr(e)} |                                                           // for expressions used as statements
@@ -74,17 +74,17 @@ object Project {
         (ident ~ "(" ~ expr ~ ")" ~ ";").map { case (nm, e) => FuncDef (nm, e) } |
         ( "return " ~ expr ~ ";" ).map{case (e) => Return(e)} |                                             // return
         //("for" ~ "(" ~ ident ~ ";" ~ expr ~ ";" ~ assignExpr ~ ")" ~ statement).map { case (nm, e1, e2, s) => For (nm, e1, e2, s) } |
+       //("for" ~ "(" ~ "int" ~ ident ~ "=" ~ integer ~ ";" ~ ident.map(s => ()) ~ gtLtGeLeExpr ~ integer ~ ";" ~ statement ~ ")" ~ statement) |
         ( "{" ~ statement.rep ~ "}").map{case (ss) => Block(ss.toList)} |                                         // blocks
         (expr ~ ";").map (e => FuncCall(e))
     )) 
-
 
      val method : Parser[Method] = P (
       (
         "public".? ~ "static" ~ typ ~ ident ~ "(" ~ (typ ~ ident).rep (sep = ",") ~ ")"  ~ statement ).map{case(nm, params, body) => Method(nm, params.toList, body)})
      
      val clazz : Parser[Clazz] = P (
-        ("public" ~ "class" ~ ident ~  "{" ~ method.rep ~ "}").map { case (nm, methods) => Clazz (nm, methods.toList) }
+        ("public".? ~ "class" ~ ident ~  "{" ~ method.rep ~ "}").map { case (nm, methods) => Clazz (nm, methods.toList) }
     )
 
      val start : Parser[Clazz] = P (clazz ~ End)
@@ -112,7 +112,7 @@ object Project {
   case class Print (e : Expr)                                     extends Stmt
   case class PrintLiteralString (s : String)                      extends Stmt
   case class FuncDef (nm : String, e: Expr)                       extends Stmt
-  case class For (nm : String, low : Expr, high : Expr, s : Stmt) extends Stmt
+  //case class For (name: String, low: Expr, symbol: Expr, num: Expr, high: Expr, step: Expr) extends Stmt
   case class FuncCall(e: Expr)                                    extends Stmt
   case class Comment ()                                           extends Stmt
 
