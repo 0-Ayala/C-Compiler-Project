@@ -90,6 +90,11 @@ object Project {
      val start : Parser[Clazz] = P (clazz ~ End)                                                                     // Just to have a start and an end
 
   }
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Abstract Syntax
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   case class Method (nm: String, params: List[(String)], body : Stmt)
 
   case class Clazz (nm: String, methods: List[Method])    
@@ -115,6 +120,11 @@ object Project {
   //case class For (name: String, low: Expr, symbol: Expr, num: Expr, high: Expr, step: Expr) extends Stmt
   case class FuncCall(e: Expr)                                    extends Stmt
   case class Comment ()                                           extends Stmt
+
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Parsing
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   def foldAssocLeft (p : (Expr, List[(String,Expr)])) : Expr = {
     p match {
